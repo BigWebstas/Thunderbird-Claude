@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font: menu; padding: 12px; }
+    label { display: block; margin-bottom: 12px; }
+    input[type=text], input[type=password], input[type=number] { width: 100%; box-sizing: border-box; }
+    #status, #folderStatus, #sortStatus { color: green; min-height: 1em; }
+  </style>
+</head>
+<body>
+  <form id="form">
+    <label>Anthropic API key
+      <input type="password" id="apiKey" autocomplete="off" required>
+    </label>
+    <label>Model
+      <input type="text" id="model" placeholder="claude-haiku-4-5">
+    </label>
+    <label>
+      <input type="checkbox" id="autoProcess">
+      Sort new mail automatically as it arrives
+    </label>
+    <label>
+      <input type="checkbox" id="createTags">
+      Let Claude create new topic tags when no existing tag fits
+    </label>
+    <label>
+      <input type="checkbox" id="sortOnStartup">
+      Sort the Inbox when Thunderbird starts (catches mail that arrived while it was closed)
+    </label>
+    <label>Move OTP emails to Trash after this many days (0 = never)
+      <input type="number" id="otpDays" min="0" step="1" value="0">
+    </label>
+    <button type="submit">Save</button>
+    <p id="status" role="status"></p>
+  </form>
+  <hr>
+  <h3>Starter folders</h3>
+  <p>Adds Work, Personal, Finance, Shopping, Travel, Newsletters, Social, Notifications and OTP to each mail account. Folders that already exist are skipped.</p>
+  <button type="button" id="createFolders">Create starter folders</button>
+  <p id="folderStatus" role="status"></p>
+  <hr>
+  <h3>Sort and review</h3>
+  <p>Sorts the newest 200 Inbox emails that Claude hasn't sorted before.</p>
+  <button type="button" id="sortInbox">Sort Inbox now</button>
+  <button type="button" id="openLog">View activity log</button>
+  <p id="sortStatus" role="status"></p>
+  <script src="options.js"></script>
+</body>
+</html>
