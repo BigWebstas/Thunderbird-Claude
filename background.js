@@ -157,7 +157,8 @@ ${body}
   return JSON.parse(textBlock.text);
 }
 
-async function processMessage(header, settings) {
+// With `spamOnly`, mail Claude doesn't call spam is left untouched: no move, flag or tags.
+async function processMessage(header, settings, spamOnly) {
   const accountId = header.folder.accountId;
   if (header.folder.specialUse?.some((u) => u === "junk" || u === "trash")) return;
 
@@ -176,6 +177,7 @@ async function processMessage(header, settings) {
     tags.map((t) => t.tag)
   );
   console.log(`[Claude Mail Sorter] "${header.subject}":`, result);
+  if (spamOnly && !result.spam) return false;
 
   const entry = {
     header,
@@ -199,7 +201,7 @@ async function processMessage(header, settings) {
       entry.to = junk;
     }
     await recordActivity(entry);
-    return;
+    return true;
   }
 
   // Only accept folders that exist and tags that exist or that the user allowed Claude to create.
@@ -220,6 +222,7 @@ async function processMessage(header, settings) {
     entry.to = target;
   }
   await recordActivity(entry);
+  return true;
 }
 
 async function resolveTagKeys(names, existingTags, allowCreate) {
@@ -378,7 +381,8 @@ function runExclusive(task) {
 }
 
 // `force` re-sorts emails that were already sorted once; only an explicit "Sort with Claude" sets it.
-function enqueue(messages, { force = false } = {}) {
+// `spamOnly` only junks spam, and leaves the rest unprocessed so a later sort still handles it.
+function enqueue(messages, { force = false, spamOnly = false } = {}) {
   return runExclusive(async () => {
     const settings = await getSettings();
     if (!settings.apiKey) {
@@ -387,18 +391,21 @@ function enqueue(messages, { force = false } = {}) {
     }
     const processed = await getProcessedIds();
     let failures = 0;
+    let junked = 0;
     let lastError = null;
     for await (const header of messages) {
       if (!force && processed.has(header.headerMessageId)) continue;
       try {
-        await processMessage(header, settings);
-        await markProcessed(header.headerMessageId);
+        const acted = await processMessage(header, settings, spamOnly);
+        if (acted !== false) await markProcessed(header.headerMessageId);
+        if (acted && spamOnly) junked++;
       } catch (e) {
         failures++;
         lastError = e;
         console.error(`[Claude Mail Sorter] "${header.subject}":`, e);
       }
     }
+    if (spamOnly) notify(`Marked ${junked} message(s) as spam.`);
     if (failures) notify(`${failures} message(s) failed: ${lastError.message}`);
   });
 }
@@ -489,18 +496,30 @@ messenger.menus.create({
   contexts: ["folder_pane"],
 });
 
+messenger.menus.create({
+  id: "find-spam-with-claude",
+  title: "Find spam with Claude",
+  contexts: ["folder_pane"],
+});
+
+// Collect first: sorting moves mail out of the folder while the list is still paging.
+async function listFolder(folder) {
+  const headers = [];
+  for await (const header of iterateMessageList(await messenger.messages.list(folder.id))) {
+    headers.push(header);
+  }
+  return headers;
+}
+
 messenger.menus.onClicked.addListener(async (info) => {
   if (info.menuItemId === "sort-with-claude" && info.selectedMessages) {
     enqueue(iterateMessageList(info.selectedMessages), { force: true });
   } else if (info.menuItemId === "sort-folder-with-claude") {
     const folder = info.selectedFolders?.[0];
-    if (!folder) return;
-    // Collect first: sorting moves mail out of the folder while the list is still paging.
-    const headers = [];
-    for await (const header of iterateMessageList(await messenger.messages.list(folder.id))) {
-      headers.push(header);
-    }
-    enqueue(headers, { force: true });
+    if (folder) enqueue(await listFolder(folder), { force: true });
+  } else if (info.menuItemId === "find-spam-with-claude") {
+    const folder = info.selectedFolders?.[0];
+    if (folder) enqueue(await listFolder(folder), { force: true, spamOnly: true });
   }
 });
 
