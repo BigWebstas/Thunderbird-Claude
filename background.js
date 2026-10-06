@@ -324,10 +324,56 @@ async function undoActivity(entryId) {
 // Everything that changes mail runs one task at a time: it keeps bursts of new mail under
 // API rate limits and stops the log and processed list from being written concurrently.
 let queue = Promise.resolve();
+let activeTasks = 0;
+
+// While any task is queued or running, the toolbar icon shows a spinner over the envelope.
+const IDLE_ICON = "icons/icon.svg";
+const IDLE_TITLE = "Claude Mail Sorter settings";
+const SPINNER_FRAMES = 12;
+const SPINNER_FRAME_MS = 100;
+let spinnerFrames = null;
+let spinnerTimer = null;
+
+async function loadSpinnerFrames() {
+  const base = await (await fetch(messenger.runtime.getURL(IDLE_ICON))).text();
+  return Array.from({ length: SPINNER_FRAMES }, (_, i) => {
+    const spinner = `<g transform="rotate(${(360 / SPINNER_FRAMES) * i} 48 48)">
+      <circle cx="48" cy="48" r="14" fill="#fff"/>
+      <circle cx="48" cy="48" r="9" fill="none" stroke="#ddd" stroke-width="4"/>
+      <path d="M48 39a9 9 0 0 1 9 9" fill="none" stroke="#d97757" stroke-width="4" stroke-linecap="round"/>
+    </g>`;
+    return "data:image/svg+xml," + encodeURIComponent(base.replace("</svg>", spinner + "</svg>"));
+  });
+}
+
+async function showStatus() {
+  if (activeTasks === 0) {
+    clearInterval(spinnerTimer);
+    spinnerTimer = null;
+    messenger.browserAction.setIcon({ path: IDLE_ICON });
+    messenger.browserAction.setTitle({ title: IDLE_TITLE });
+    return;
+  }
+  if (spinnerTimer) return;
+  messenger.browserAction.setTitle({ title: "Claude Mail Sorter: processing mail…" });
+  spinnerFrames ??= await loadSpinnerFrames();
+  // The queue may have drained, or another call may have started the timer, while frames loaded.
+  if (activeTasks === 0 || spinnerTimer) return;
+  let frame = 0;
+  const tick = () => messenger.browserAction.setIcon({ path: spinnerFrames[frame++ % SPINNER_FRAMES] });
+  tick();
+  spinnerTimer = setInterval(tick, SPINNER_FRAME_MS);
+}
 
 function runExclusive(task) {
+  activeTasks++;
+  showStatus();
   const run = queue.then(task);
   queue = run.catch(() => {});
+  run.catch(() => {}).then(() => {
+    activeTasks--;
+    showStatus();
+  });
   return run;
 }
 
@@ -437,9 +483,24 @@ messenger.menus.create({
   contexts: ["message_list"],
 });
 
-messenger.menus.onClicked.addListener((info) => {
+messenger.menus.create({
+  id: "sort-folder-with-claude",
+  title: "Sort folder with Claude",
+  contexts: ["folder_pane"],
+});
+
+messenger.menus.onClicked.addListener(async (info) => {
   if (info.menuItemId === "sort-with-claude" && info.selectedMessages) {
     enqueue(iterateMessageList(info.selectedMessages), { force: true });
+  } else if (info.menuItemId === "sort-folder-with-claude") {
+    const folder = info.selectedFolders?.[0];
+    if (!folder) return;
+    // Collect first: sorting moves mail out of the folder while the list is still paging.
+    const headers = [];
+    for await (const header of iterateMessageList(await messenger.messages.list(folder.id))) {
+      headers.push(header);
+    }
+    enqueue(headers, { force: true });
   }
 });
 
