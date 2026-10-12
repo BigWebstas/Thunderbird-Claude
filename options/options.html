@@ -5,7 +5,7 @@
   <style>
     body { font: menu; padding: 12px; }
     label { display: block; margin-bottom: 12px; }
-    input[type=text], input[type=password], input[type=number] { width: 100%; box-sizing: border-box; }
+    input[type=text], input[type=password], input[type=number], select { width: 100%; box-sizing: border-box; }
     #status, #folderStatus, #sortStatus { color: green; min-height: 1em; }
   </style>
 </head>
@@ -15,7 +15,8 @@
       <input type="password" id="apiKey" autocomplete="off" required>
     </label>
     <label>Model
-      <input type="text" id="model" placeholder="claude-haiku-4-5">
+      <select id="model"></select>
+      <small id="modelStatus"></small>
     </label>
     <label>
       <input type="checkbox" id="autoProcess">

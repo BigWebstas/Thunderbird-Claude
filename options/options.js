@@ -12,11 +12,43 @@ const fields = {
   otpDays: document.getElementById("otpDays"),
 };
 
+const modelStatus = document.getElementById("modelStatus");
+
+// Fills the picker from the Anthropic models API, keeping the saved model selectable if the lookup fails.
+async function loadModels(selected) {
+  const apiKey = fields.apiKey.value.trim();
+  const options = [new Option("Default (claude-haiku-4-5)", "")];
+  modelStatus.textContent = "";
+  if (apiKey) {
+    modelStatus.textContent = "Loading models…";
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/models?limit=1000", {
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+      });
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      const { data } = await response.json();
+      for (const m of data) options.push(new Option(`${m.display_name} (${m.id})`, m.id));
+      modelStatus.textContent = "";
+    } catch (e) {
+      modelStatus.textContent = `Could not load models: ${e.message}`;
+    }
+  }
+  if (selected && !options.some((o) => o.value === selected)) options.push(new Option(selected, selected));
+  fields.model.replaceChildren(...options);
+  fields.model.value = selected;
+}
+
+fields.apiKey.addEventListener("change", () => loadModels(fields.model.value));
+
 messenger.storage.local
   .get(["apiKey", "model", "autoProcess", "createTags", "sortOnStartup", "otpDays"])
   .then((s) => {
     fields.apiKey.value = s.apiKey || "";
-    fields.model.value = s.model || "";
+    loadModels(s.model || "");
     fields.autoProcess.checked = !!s.autoProcess;
     fields.createTags.checked = !!s.createTags;
     fields.sortOnStartup.checked = !!s.sortOnStartup;
@@ -27,7 +59,7 @@ form.addEventListener("submit", async (e) => {
   e.preventDefault();
   await messenger.storage.local.set({
     apiKey: fields.apiKey.value.trim(),
-    model: fields.model.value.trim(),
+    model: fields.model.value,
     autoProcess: fields.autoProcess.checked,
     createTags: fields.createTags.checked,
     sortOnStartup: fields.sortOnStartup.checked,
