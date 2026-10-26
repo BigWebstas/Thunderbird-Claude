@@ -450,11 +450,15 @@ async function learnFromMoves(messages) {
   if (learned !== corrections) await messenger.storage.local.set({ corrections: learned.slice(-MAX_CORRECTIONS) });
 }
 
-messenger.messages.onMoved.addListener((_, moved) => {
-  learning = learning
-    .then(() => learnFromMoves(moved.messages))
-    .catch((e) => console.error("[Claude Mail Sorter] learning from a move failed:", e));
-});
+try {
+  messenger.messages.onMoved.addListener((_, moved) => {
+    learning = learning
+      .then(() => learnFromMoves(moved.messages))
+      .catch((e) => console.error("[Claude Mail Sorter] learning from a move failed:", e));
+  });
+} catch (e) {
+  console.error("[Claude Mail Sorter] can't watch for moved mail:", e);
+}
 
 // --- Unread newsletters: senders that keep sending but whose mail is never opened ---
 
@@ -594,11 +598,17 @@ let activeTasks = 0;
 
 // While any task is queued or running, the toolbar icon shows a spinner over the envelope.
 const IDLE_ICON = "icons/icon.svg";
-const IDLE_TITLE = "Claude Mail Sorter settings";
+const IDLE_TITLE = "Claude Mail Sorter";
 const SPINNER_FRAMES = 12;
 const SPINNER_FRAME_MS = 100;
 let spinnerFrames = null;
 let spinnerTimer = null;
+// Emails handled since the queue last went idle; shown on the toolbar badge.
+let handledCount = 0;
+
+function showCount() {
+  messenger.browserAction.setBadgeText({ text: activeTasks > 0 && handledCount > 0 ? String(handledCount) : "" });
+}
 
 async function loadSpinnerFrames() {
   const base = await (await fetch(messenger.runtime.getURL(IDLE_ICON))).text();
@@ -616,12 +626,15 @@ async function showStatus() {
   if (activeTasks === 0) {
     clearInterval(spinnerTimer);
     spinnerTimer = null;
+    handledCount = 0;
+    showCount();
     messenger.browserAction.setIcon({ path: IDLE_ICON });
     messenger.browserAction.setTitle({ title: IDLE_TITLE });
     return;
   }
   if (spinnerTimer) return;
   messenger.browserAction.setTitle({ title: "Claude Mail Sorter: processing mail…" });
+  messenger.browserAction.setBadgeBackgroundColor({ color: "#d97757" });
   spinnerFrames ??= await loadSpinnerFrames();
   // The queue may have drained, or another call may have started the timer, while frames loaded.
   if (activeTasks === 0 || spinnerTimer) return;
@@ -667,6 +680,8 @@ function enqueue(messages, { force = false, spamOnly = false } = {}) {
         lastError = e;
         console.error(`[Claude Mail Sorter] "${header.subject}":`, e);
       }
+      handledCount++;
+      showCount();
     }
     if (spamOnly) notify(`Marked ${junked} message(s) as spam.`);
     if (failures) notify(`${failures} message(s) failed: ${lastError.message}`);
@@ -791,6 +806,7 @@ messenger.runtime.onMessage.addListener((message) => {
   if (message.type === "sortInbox") return sortInboxes();
   if (message.type === "undo") return runExclusive(() => undoActivity(message.id));
   if (message.type === "resolvePending") return runExclusive(() => resolvePending(message.ids, message.approve));
+  if (message.type === "status") return Promise.resolve({ working: activeTasks > 0, handled: handledCount });
   if (message.type === "findNewsletters") return findUnreadNewsletters();
   if (message.type === "dismissReminder") return dismissReminder(message.id);
   return undefined;
@@ -813,4 +829,3 @@ messenger.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.otpDays) cleanUpOldOtps();
 });
 
-messenger.browserAction.onClicked.addListener(() => messenger.runtime.openOptionsPage());
