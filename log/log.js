@@ -65,36 +65,131 @@ function render(activityLog) {
   }
 }
 
-function ruleItem(text, label, onClick) {
+function ruleItem(text, ...buttons) {
   const li = document.createElement("li");
   li.textContent = text;
-  const button = document.createElement("button");
-  button.textContent = label;
-  button.addEventListener("click", onClick);
-  li.append(button);
+  for (const [label, onClick] of buttons) {
+    const button = document.createElement("button");
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    li.append(button);
+  }
   return li;
 }
 
-function renderRules(activityLog, rules) {
-  const suggestions = suggestRules(activityLog, rules);
+// What a rule would catch in the Inbox right now.
+async function previewRule(pattern) {
+  const inboxes = (await messenger.folders.query({ specialUse: ["inbox"] })).filter((f) => !f.isUnified && !f.isVirtual);
+  const matches = [];
+  for (const inbox of inboxes) {
+    for await (const header of iterateMessageList(await messenger.messages.query({ folderId: inbox.id, author: pattern }))) {
+      if (matchesSender(pattern, senderAddress(header.author))) matches.push(header);
+    }
+  }
+  if (!matches.length) return `${pattern} matches no emails in your Inbox.`;
+  const sample = matches.slice(0, 3).map((h) => `"${h.subject}"`).join(", ");
+  return `${pattern} matches ${matches.length} Inbox email(s), e.g. ${sample}.`;
+}
+
+const previewBox = document.getElementById("preview");
+
+async function showPreview(pattern) {
+  previewBox.textContent = "Checking the Inbox…";
+  try {
+    previewBox.textContent = await previewRule(pattern);
+  } catch (e) {
+    previewBox.textContent = `Couldn't check: ${e.message}`;
+  }
+}
+
+function addRule(address, folderId, path) {
+  const others = rules.filter((r) => r.address !== address);
+  return messenger.storage.local.set({ rules: [...others, { address, folderId, path, added: Date.now() }] });
+}
+
+function renderRules() {
+  const suggestions = suggestRules(activityLog, rules, corrections);
   document.getElementById("suggestions").replaceChildren(
     ...suggestions.map((s) =>
-      ruleItem(`${s.address} → ${s.path} (filed there ${s.count} times)`, "Add rule", () =>
-        messenger.storage.local.set({
-          rules: [...rules, { address: s.address, folderId: s.folderId, path: s.path }],
-        })
+      ruleItem(
+        `${s.address} → ${s.path} (${s.count} times)`,
+        ["Preview", () => showPreview(s.address)],
+        ["Add rule", () => addRule(s.address, s.folderId, s.path)]
       )
     )
   );
   document.getElementById("no-suggestions").hidden = suggestions.length > 0;
+
+  const problems = new Map(rules.map((r) => [r, ruleProblem(r, ruleHits, folderIds)]));
   document.getElementById("rules").replaceChildren(
-    ...rules.map((r) =>
-      ruleItem(`${r.address} → ${r.path}`, "Remove", () =>
-        messenger.storage.local.set({ rules: rules.filter((x) => x !== r) })
+    ...rules.map((r) => {
+      const problem = problems.get(r);
+      return ruleItem(
+        `${r.address} → ${r.path}${problem ? ` (${problem})` : ""}`,
+        ["Remove", () => messenger.storage.local.set({ rules: rules.filter((x) => x !== r) })]
+      );
+    })
+  );
+  document.getElementById("no-rules").hidden = rules.length > 0;
+  document.getElementById("removeStale").hidden = ![...problems.values()].some(Boolean);
+}
+
+document.getElementById("removeStale").addEventListener("click", () =>
+  messenger.storage.local.set({ rules: rules.filter((r) => !ruleProblem(r, ruleHits, folderIds)) })
+);
+
+const newPattern = document.getElementById("newPattern");
+const newFolder = document.getElementById("newFolder");
+
+function validPattern() {
+  const pattern = newPattern.value.trim().toLowerCase();
+  if (pattern.includes("@")) return pattern;
+  previewBox.textContent = "Enter an address like a@b.com, or a domain like @b.com.";
+  return null;
+}
+
+document.getElementById("previewRule").addEventListener("click", () => {
+  const pattern = validPattern();
+  if (pattern) showPreview(pattern);
+});
+
+document.getElementById("addRule").addEventListener("click", async () => {
+  const pattern = validPattern();
+  const folder = newFolder.selectedOptions[0]?.folder;
+  if (!pattern || !folder) return;
+  await addRule(pattern, folder.id, folder.path);
+  newPattern.value = "";
+  previewBox.textContent = "";
+});
+
+async function loadFolders() {
+  const [folders, accounts] = await Promise.all([messenger.folders.query({}), messenger.accounts.list(false)]);
+  folderIds = new Set(folders.map((f) => f.id));
+  const names = new Map(accounts.map((a) => [a.id, a.name]));
+  newFolder.replaceChildren(
+    ...folders.filter(isSortTarget).map((f) => {
+      const option = new Option(`${names.get(f.accountId) ?? ""}: ${f.path}`, f.id);
+      option.folder = f;
+      return option;
+    })
+  );
+}
+
+function renderReminders() {
+  document.getElementById("reminderSection").hidden = reminders.length === 0;
+  document.getElementById("reminders").replaceChildren(
+    ...reminders.map((r) =>
+      ruleItem(
+        `${r.subject || "(no subject)"} (${r.author}), received ${new Date(r.date).toLocaleDateString()}${r.notified ? ", overdue" : ""}`,
+        ["Dismiss", () => messenger.runtime.sendMessage({ type: "dismissReminder", id: r.id })]
       )
     )
   );
-  document.getElementById("no-rules").hidden = rules.length > 0;
+}
+
+function renderDigest() {
+  document.getElementById("digest").textContent =
+    describeSummary(summarize(activityLog, visitSince)) || "Nothing new.";
 }
 
 function formatUsage(label, days) {
@@ -167,7 +262,7 @@ newsletterButton.addEventListener("click", async () => {
       ...found.map((n) => {
         const text = `${n.address}: ${n.unread} of ${n.total} unread`;
         if (n.unsubscribe?.startsWith("https://")) {
-          return ruleItem(text, "Unsubscribe", () => messenger.windows.openDefaultBrowser(n.unsubscribe));
+          return ruleItem(text, ["Unsubscribe", () => messenger.windows.openDefaultBrowser(n.unsubscribe)]);
         }
         return Object.assign(document.createElement("li"), {
           textContent: n.unsubscribe ? `${text} (unsubscribe by email: ${n.unsubscribe.slice(7)})` : text,
@@ -187,30 +282,51 @@ let activityLog = [];
 let rules = [];
 let pending = [];
 let usageByDay = {};
+let corrections = [];
+let ruleHits = {};
+let reminders = [];
+let folderIds = new Set();
+let visitSince = 0;
 
 function renderAll() {
   render(activityLog);
-  renderRules(activityLog, rules);
+  renderRules();
   renderPending();
   renderUsage();
+  renderReminders();
+  renderDigest();
 }
 
 async function load() {
-  ({ activityLog = [], rules = [], pending = [], usageByDay = {} } = await messenger.storage.local.get([
-    "activityLog",
-    "rules",
-    "pending",
-    "usageByDay",
-  ]));
+  const stored = await messenger.storage.local.get([
+    "activityLog", "rules", "pending", "usageByDay", "corrections", "ruleHits", "reminders", "lastVisit",
+  ]);
+  ({ activityLog = [], rules = [], pending = [], usageByDay = {}, corrections = [], ruleHits = {}, reminders = [] } = stored);
+  visitSince = stored.lastVisit ?? 0;
+  messenger.storage.local.set({ lastVisit: Date.now() });
+  await loadFolders();
   renderAll();
 }
 
+const WATCHED = {
+  activityLog: (v) => (activityLog = v || []),
+  rules: (v) => (rules = v || []),
+  pending: (v) => (pending = v || []),
+  usageByDay: (v) => (usageByDay = v || {}),
+  corrections: (v) => (corrections = v || []),
+  ruleHits: (v) => (ruleHits = v || {}),
+  reminders: (v) => (reminders = v || []),
+};
+
 messenger.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (changes.activityLog) activityLog = changes.activityLog.newValue || [];
-  if (changes.rules) rules = changes.rules.newValue || [];
-  if (changes.pending) pending = changes.pending.newValue || [];
-  if (changes.usageByDay) usageByDay = changes.usageByDay.newValue || {};
-  renderAll();
+  let changed = false;
+  for (const [key, set] of Object.entries(WATCHED)) {
+    if (changes[key]) {
+      set(changes[key].newValue);
+      changed = true;
+    }
+  }
+  if (changed) renderAll();
 });
 load();

@@ -13,6 +13,8 @@ const fields = {
   reviewFirst: document.getElementById("reviewFirst"),
   folderHints: document.getElementById("folderHints"),
   excludeList: document.getElementById("excludeList"),
+  replyDays: document.getElementById("replyDays"),
+  digest: document.getElementById("digest"),
 };
 
 const modelStatus = document.getElementById("modelStatus");
@@ -47,19 +49,24 @@ async function loadModels(selected) {
 
 fields.apiKey.addEventListener("change", () => loadModels(fields.model.value));
 
-messenger.storage.local
-  .get(["apiKey", "model", "autoProcess", "createTags", "sortOnStartup", "otpDays", "reviewFirst", "folderHints", "excludeList"])
-  .then((s) => {
-    fields.apiKey.value = s.apiKey || "";
-    loadModels(s.model || "");
-    fields.autoProcess.checked = !!s.autoProcess;
-    fields.createTags.checked = !!s.createTags;
-    fields.sortOnStartup.checked = !!s.sortOnStartup;
-    fields.otpDays.value = s.otpDays || 0;
-    fields.reviewFirst.checked = !!s.reviewFirst;
-    fields.folderHints.value = s.folderHints || "";
-    fields.excludeList.value = s.excludeList || "";
-  });
+function loadSettings() {
+  return messenger.storage.local
+    .get(["apiKey", "model", "autoProcess", "createTags", "sortOnStartup", "otpDays", "reviewFirst", "folderHints", "excludeList", "replyDays", "digest"])
+    .then((s) => {
+      fields.apiKey.value = s.apiKey || "";
+      loadModels(s.model || "");
+      fields.autoProcess.checked = !!s.autoProcess;
+      fields.createTags.checked = !!s.createTags;
+      fields.sortOnStartup.checked = !!s.sortOnStartup;
+      fields.otpDays.value = s.otpDays || 0;
+      fields.reviewFirst.checked = !!s.reviewFirst;
+      fields.folderHints.value = s.folderHints || "";
+      fields.excludeList.value = s.excludeList || "";
+      fields.replyDays.value = s.replyDays || 0;
+      fields.digest.checked = !!s.digest;
+    });
+}
+loadSettings();
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -73,6 +80,8 @@ form.addEventListener("submit", async (e) => {
     reviewFirst: fields.reviewFirst.checked,
     folderHints: fields.folderHints.value,
     excludeList: fields.excludeList.value,
+    replyDays: Math.max(0, Math.floor(Number(fields.replyDays.value) || 0)),
+    digest: fields.digest.checked,
   });
   document.getElementById("status").textContent = "Saved.";
 });
@@ -152,4 +161,60 @@ sortButton.addEventListener("click", async () => {
 
 document.getElementById("openLog").addEventListener("click", () => {
   messenger.tabs.create({ url: "/log/log.html" });
+});
+
+// --- Backup ---
+
+const BACKUP_SETTINGS = ["autoProcess", "createTags", "sortOnStartup", "otpDays", "reviewFirst", "folderHints", "excludeList", "replyDays", "digest"];
+const backupStatus = document.getElementById("backupStatus");
+
+document.getElementById("exportSettings").addEventListener("click", async () => {
+  const stored = await messenger.storage.local.get([...BACKUP_SETTINGS, "rules"]);
+  const backup = {
+    settings: Object.fromEntries(BACKUP_SETTINGS.filter((k) => k in stored).map((k) => [k, stored[k]])),
+    rules: (stored.rules || []).map((r) => ({ address: r.address, path: r.path })),
+  };
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
+  link.download = "claude-mail-sorter-settings.json";
+  link.click();
+  URL.revokeObjectURL(link.href);
+  backupStatus.textContent = "Exported.";
+});
+
+async function importBackup(file) {
+  const backup = JSON.parse(await file.text());
+  if (typeof backup.settings !== "object" || !Array.isArray(backup.rules)) throw new Error("not a settings export");
+  const settings = Object.fromEntries(BACKUP_SETTINGS.filter((k) => k in backup.settings).map((k) => [k, backup.settings[k]]));
+
+  const folders = (await messenger.folders.query({})).filter(isSortTarget);
+  const { rules = [] } = await messenger.storage.local.get("rules");
+  let skipped = 0;
+  for (const imported of backup.rules) {
+    const folder = folders.find((f) => f.path === imported.path);
+    if (typeof imported.address !== "string" || !folder) {
+      skipped++;
+      continue;
+    }
+    const others = rules.filter((r) => r.address !== imported.address);
+    rules.length = 0;
+    rules.push(...others, { address: imported.address, folderId: folder.id, path: folder.path, added: Date.now() });
+  }
+  await messenger.storage.local.set({ ...settings, rules });
+  await loadSettings();
+  return skipped;
+}
+
+const importFile = document.getElementById("importFile");
+document.getElementById("importSettings").addEventListener("click", () => importFile.click());
+importFile.addEventListener("change", async () => {
+  const [file] = importFile.files;
+  importFile.value = "";
+  if (!file) return;
+  try {
+    const skipped = await importBackup(file);
+    backupStatus.textContent = "Imported." + (skipped ? ` ${skipped} rule(s) skipped because no matching folder exists here.` : "");
+  } catch (e) {
+    backupStatus.textContent = `Import failed: ${e.message}`;
+  }
 });

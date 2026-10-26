@@ -18,6 +18,15 @@
 <body>
   <p id="error" role="alert"></p>
 
+  <h2>Since your last visit</h2>
+  <p id="digest"></p>
+
+  <section id="reminderSection" hidden>
+    <h2>Awaiting your reply</h2>
+    <p class="muted">Emails Claude thought expect an answer, and you haven't replied to yet.</p>
+    <ul id="reminders"></ul>
+  </section>
+
   <h2>Usage</h2>
   <p class="muted">Tokens sent to and received from Claude. Emails filed by rules cost nothing.</p>
   <ul id="usage"></ul>
@@ -39,6 +48,15 @@
   <h3>Active</h3>
   <ul id="rules"></ul>
   <p id="no-rules" class="muted" hidden>None yet.</p>
+  <p><button type="button" id="removeStale" hidden>Remove stale rules</button></p>
+  <h3>Add a rule</h3>
+  <p>
+    <input id="newPattern" size="26" placeholder="a@b.com or @b.com">
+    <select id="newFolder"></select>
+    <button type="button" id="previewRule">Preview</button>
+    <button type="button" id="addRule">Add rule</button>
+  </p>
+  <p id="preview" class="muted"></p>
 
   <h2>Unread newsletters</h2>
   <p class="muted">Senders you've received at least 5 emails from and almost never open.</p>
@@ -55,7 +73,7 @@
     <tbody id="rows"></tbody>
   </table>
   <p id="empty" class="muted" hidden>Nothing yet.</p>
-  <script src="../rules.js"></script>
+  <script src="../shared.js"></script>
   <script src="log.js"></script>
 </body>
 </html>

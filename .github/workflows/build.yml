@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Package add-on
-        run: zip -r claude-mail-sorter.xpi manifest.json rules.js background.js icons options log
+        run: zip -r claude-mail-sorter.xpi manifest.json shared.js background.js icons options log
 
       - uses: actions/upload-artifact@v4
         with:
