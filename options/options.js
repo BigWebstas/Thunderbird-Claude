@@ -10,6 +10,9 @@ const fields = {
   createTags: document.getElementById("createTags"),
   sortOnStartup: document.getElementById("sortOnStartup"),
   otpDays: document.getElementById("otpDays"),
+  reviewFirst: document.getElementById("reviewFirst"),
+  folderHints: document.getElementById("folderHints"),
+  excludeList: document.getElementById("excludeList"),
 };
 
 const modelStatus = document.getElementById("modelStatus");
@@ -45,7 +48,7 @@ async function loadModels(selected) {
 fields.apiKey.addEventListener("change", () => loadModels(fields.model.value));
 
 messenger.storage.local
-  .get(["apiKey", "model", "autoProcess", "createTags", "sortOnStartup", "otpDays"])
+  .get(["apiKey", "model", "autoProcess", "createTags", "sortOnStartup", "otpDays", "reviewFirst", "folderHints", "excludeList"])
   .then((s) => {
     fields.apiKey.value = s.apiKey || "";
     loadModels(s.model || "");
@@ -53,6 +56,9 @@ messenger.storage.local
     fields.createTags.checked = !!s.createTags;
     fields.sortOnStartup.checked = !!s.sortOnStartup;
     fields.otpDays.value = s.otpDays || 0;
+    fields.reviewFirst.checked = !!s.reviewFirst;
+    fields.folderHints.value = s.folderHints || "";
+    fields.excludeList.value = s.excludeList || "";
   });
 
 form.addEventListener("submit", async (e) => {
@@ -64,6 +70,9 @@ form.addEventListener("submit", async (e) => {
     createTags: fields.createTags.checked,
     sortOnStartup: fields.sortOnStartup.checked,
     otpDays: Math.max(0, Math.floor(Number(fields.otpDays.value) || 0)),
+    reviewFirst: fields.reviewFirst.checked,
+    folderHints: fields.folderHints.value,
+    excludeList: fields.excludeList.value,
   });
   document.getElementById("status").textContent = "Saved.";
 });

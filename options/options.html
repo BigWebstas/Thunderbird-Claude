@@ -5,7 +5,7 @@
   <style>
     body { font: menu; padding: 12px; }
     label { display: block; margin-bottom: 12px; }
-    input[type=text], input[type=password], input[type=number], select { width: 100%; box-sizing: border-box; }
+    input[type=text], input[type=password], input[type=number], select, textarea { width: 100%; box-sizing: border-box; }
     #status, #folderStatus, #sortStatus { color: green; min-height: 1em; }
   </style>
 </head>
@@ -29,6 +29,16 @@
     <label>
       <input type="checkbox" id="sortOnStartup">
       Sort the Inbox when Thunderbird starts (catches mail that arrived while it was closed)
+    </label>
+    <label>
+      <input type="checkbox" id="reviewFirst">
+      Ask me before moving anything (Claude's decisions wait for approval on the activity page)
+    </label>
+    <label>Folder hints (optional). One per line, as <code>/Folder path: what belongs there</code>
+      <textarea id="folderHints" rows="4" placeholder="/Receipts: invoices and order confirmations"></textarea>
+    </label>
+    <label>Never touch (optional). One per line: a sender (<code>a@b.com</code>), a whole domain (<code>@b.com</code>) or a folder path (<code>/Family</code>)
+      <textarea id="excludeList" rows="4"></textarea>
     </label>
     <label>Move OTP emails to Trash after this many days (0 = never)
       <input type="number" id="otpDays" min="0" step="1" value="0">

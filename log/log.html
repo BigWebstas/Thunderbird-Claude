@@ -10,13 +10,44 @@
     th { position: sticky; top: 0; background: Canvas; }
     .muted { opacity: 0.7; }
     .undone td { opacity: 0.5; }
+    li { margin: 4px 0; }
+    li button { margin-left: 8px; }
     #error { color: #c01c28; min-height: 1em; }
   </style>
 </head>
 <body>
+  <p id="error" role="alert"></p>
+
+  <h2>Usage</h2>
+  <p class="muted">Tokens sent to and received from Claude. Emails filed by rules cost nothing.</p>
+  <ul id="usage"></ul>
+
+  <section id="pendingSection" hidden>
+    <h2>Waiting for your approval</h2>
+    <p>
+      <button type="button" id="approveAll">Approve all</button>
+      <button type="button" id="rejectAll">Reject all</button>
+    </p>
+    <ul id="pending"></ul>
+  </section>
+
+  <h2>Rules</h2>
+  <p class="muted">A rule files a sender's mail in a folder without asking Claude, which also saves tokens. Suggestions come from senders (or domains) Claude has filed in the same folder at least 3 times.</p>
+  <h3>Suggested</h3>
+  <ul id="suggestions"></ul>
+  <p id="no-suggestions" class="muted" hidden>None yet.</p>
+  <h3>Active</h3>
+  <ul id="rules"></ul>
+  <p id="no-rules" class="muted" hidden>None yet.</p>
+
+  <h2>Unread newsletters</h2>
+  <p class="muted">Senders you've received at least 5 emails from and almost never open.</p>
+  <p><button type="button" id="findNewsletters">Find unread newsletters</button></p>
+  <ul id="newsletters"></ul>
+  <p id="no-newsletters" class="muted" hidden>None found.</p>
+
   <h2>Activity log</h2>
   <p class="muted">The last 500 things Claude did. Undo puts the email back where it was and removes the flag, tags or junk mark Claude added.</p>
-  <p id="error" role="alert"></p>
   <table>
     <thead>
       <tr><th>When</th><th>Email</th><th>What happened</th><th>Why</th><th></th></tr>
@@ -24,6 +55,7 @@
     <tbody id="rows"></tbody>
   </table>
   <p id="empty" class="muted" hidden>Nothing yet.</p>
+  <script src="../rules.js"></script>
   <script src="log.js"></script>
 </body>
 </html>
