@@ -15,6 +15,8 @@ const MAX_NEW_TAGS_PER_EMAIL = 2;
 const INBOX_SWEEP_LIMIT = 200;
 const STARTUP_SWEEP_DELAY_MS = 60 * 1000;
 const HOURLY_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+// Tasks run one at a time, so a hung request would block all new mail.
+const API_TIMEOUT_MS = 2 * 60 * 1000;
 const MAX_LOG_ENTRIES = 500;
 const MAX_PROCESSED_IDS = 5000;
 const TAG_COLORS = ["#3584e4", "#2ec27e", "#e66100", "#9141ac", "#c01c28", "#986a44", "#1c71d8", "#26a269"];
@@ -192,6 +194,7 @@ ${body}
     method: "POST",
     headers,
     body: JSON.stringify(request),
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
 
   if (!response.ok) {
